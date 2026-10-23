@@ -44,6 +44,7 @@ services:
     networks:
       - private_db_net
       - public_net
+      - monitoring_net
 
   nginx:
     image: nginx:alpine
@@ -59,6 +60,65 @@ services:
       - no-new-privileges:true
     networks:
       - public_net
+      - monitoring_net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: library_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring_net
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:latest
+    container_name: library_nginx_exporter
+    command:
+      - -nginx.scrape-uri=http://nginx:80/nginx_status
+    depends_on:
+      - nginx
+    networks:
+      - monitoring_net
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: library_postgres_exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_ROOT_USER}:${POSTGRES_ROOT_PASSWORD}@db:5432/${POSTGRES_DB}?sslmode=disable"
+    depends_on:
+      - db
+    networks:
+      - private_db_net
+      - monitoring_net
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: library_cadvisor
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - monitoring_net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: library_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PW}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - public_net
+      - monitoring_net
 
 networks:
   public_net:
@@ -66,6 +126,8 @@ networks:
   private_db_net:
     driver: bridge
     internal: true
+  monitoring_net:
+    driver: bridge
 
 volumes:
   pgdata:
